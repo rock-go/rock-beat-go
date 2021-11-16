@@ -110,6 +110,9 @@ func (wv *winEv) accpet() {
 		case <-wv.ctx.Done():
 			return
 		case evt := <- wv.watcher.Event():
+			evt.NodeID = node.ID()
+			evt.NodeIP = node.LoadAddr()
+
 			wv.bookmark(evt)
 			wv.send(evt)
 

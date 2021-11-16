@@ -93,6 +93,9 @@ type WinLogEvent struct {
 	// Subscribed channel from which the event was retrieved,
 	// which may be different than the event's channel
 	SubscribedChannel string    `lua:"subscribed_channel"`
+
+	NodeID            string    `lua:"-"`
+	NodeIP            string    `lua:"-"`
 }
 
 type channelWatcher struct {
