@@ -39,24 +39,27 @@ func (lev *logonEv) handle(ev *audit.Event) {
 
 func (wv *winEv) logon(evt *watch.WinLogEvent) {
 	var ev *audit.Event
-	defer func() { if ev != nil { ev.Put() } }()
+	defer func() { if ev != nil { ev.Time(evt.Created).Put() } }()
 
 
 	switch evt.EventId {
 	case 4625: //账户登录成功
 		ev = audit.NewEvent("win-logon" ,
 			audit.Subject("账户登录失败"),
-			audit.From(wv.vm.CodeVM()) )
+			audit.From(wv.vm.CodeVM()),
+			audit.Time(evt.Created))
 
 	case 4624: //账户登陆失败
 		ev = audit.NewEvent("win-logon" ,
 			audit.Subject("账户登录成功"),
-			audit.From(wv.vm.CodeVM()))
+			audit.From(wv.vm.CodeVM()),
+			audit.Time(evt.Created))
 
 	case 4634:
 		ev = audit.NewEvent("win-logon" ,
 			audit.Subject("账户注销"),
-			audit.From(wv.vm.CodeVM()))
+			audit.From(wv.vm.CodeVM()),
+			audit.Time(evt.Created))
 
 	default:
 		//todo
