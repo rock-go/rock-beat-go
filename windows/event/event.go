@@ -72,12 +72,11 @@ func (wv *winEv) call(evt *watch.WinLogEvent) {
 	}
 
 	co := lua.Clone(wv.vm)
-	ud := co.NewAnyData(evt ,lua.Reflect(lua.ELEM) ,lua.Reflect(lua.FUNC))
 	err := xcall.CallByParam(co , lua.P{
 		Fn: fn,
 		NRet: 0,
 		Protect: true,
-	} , xcall.Rock , ud)
+	} , xcall.Rock , evt.ToLValue(co))
 
 	lua.FreeState(co)
 
@@ -90,13 +89,7 @@ func (wv *winEv) send(evt *watch.WinLogEvent) {
 	if wv.cfg.transport == nil {
 		return
 	}
-	data , err := evt.Marshal()
-	if err != nil {
-		logger.Errorf("marshal %v" , err)
-		return
-	}
-
-	_ ,err = wv.cfg.transport.Write(data)
+	_ , err := wv.cfg.transport.Write(evt.Bytes())
 	if err != nil {
 		logger.Errorf("transport write %v" , err)
 		return
@@ -104,15 +97,16 @@ func (wv *winEv) send(evt *watch.WinLogEvent) {
 }
 
 func (wv *winEv) accpet() {
+
+	delay := 50 * time.Millisecond
+	max := 1 * time.Second
+
 	for {
 		select {
 
 		case <-wv.ctx.Done():
 			return
 		case evt := <- wv.watcher.Event():
-			evt.NodeID = node.ID()
-			evt.NodeIP = node.LoadAddr()
-
 			wv.bookmark(evt)
 			wv.send(evt)
 
@@ -120,7 +114,7 @@ func (wv *winEv) accpet() {
 				continue
 			}
 
-			wv.logon(evt)
+			//wv.logon(evt)
 			wv.call(evt)
 		case err := <-wv.watcher.Error():
 			audit.NewEvent("beat-windows-log",
@@ -130,7 +124,12 @@ func (wv *winEv) accpet() {
 				audit.E(err)).Log().Put()
 
 		default:
-			<-time.After(2 * time.Second)
+			delay += 10 * time.Millisecond
+			if delay >= max {
+				<- time.After(max)
+			} else {
+				<-time.After(delay)
+			}
 		}
 	}
 }

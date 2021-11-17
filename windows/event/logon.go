@@ -16,9 +16,9 @@ import (
 type logonEv struct {
 	Time         time.Time          `xml:"-"         json:"time"`
 	EventID      uint64             `xml:"-"         json:"event_id"`
-	TaskText string    `xml:"-"         json:"task_text"`
-	EvData   EventData `xml:"EventData" json:"data"`
-	PC       string    `xml:"-"         json:"pc"`
+	TaskText     string             `xml:"-"         json:"task_text"`
+	EvData       watch.EventData    `xml:"EventData" json:"data"`
+	PC            string            `xml:"-"         json:"pc"`
 	UserName     string             `xml:"-"         json:"username"`
 	Remote       string             `xml:"-"         json:"remote"`
 	Port         string             `xml:"-"         json:"port"`
@@ -39,7 +39,7 @@ func (lev *logonEv) handle(ev *audit.Event) {
 
 func (wv *winEv) logon(evt *watch.WinLogEvent) {
 	var ev *audit.Event
-	defer func() { if ev != nil { ev.Time(evt.Created).Put() } }()
+	defer func() { if ev != nil { ev.Put() } }()
 
 
 	switch evt.EventId {
@@ -48,6 +48,7 @@ func (wv *winEv) logon(evt *watch.WinLogEvent) {
 			audit.Subject("账户登录失败"),
 			audit.From(wv.vm.CodeVM()),
 			audit.Time(evt.Created))
+
 
 	case 4624: //账户登陆失败
 		ev = audit.NewEvent("win-logon" ,

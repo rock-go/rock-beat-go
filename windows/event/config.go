@@ -7,11 +7,10 @@ import (
 
 type config struct {
 	name      string
-
 	chains    lua.UserKV
 	hook      *lua.LFunction
 	pass      []uint64
-	offset    string
+	begin     bool
 	transport lua.Writer
 }
 
@@ -26,14 +25,17 @@ func newConfig(L *lua.LState) *config {
 	tab.Range(func(key string, val lua.LValue) {
 		switch key {
 		case "name":
-			cfg.name   = val.String()
-		case "offset":
-			cfg.offset = val.String()
+			cfg.name = val.String()
+
+		case "begin":
+			cfg.begin = lua.CheckBool(L , val)
+
 		case "transport":
 			cfg.transport = auxlib.CheckTransport(L , val)
 
 		case "hook":
 			cfg.hook = lua.CheckFunction(L , val)
+
 		case "pass":
 			switch val.Type() {
 			case lua.LTNumber:

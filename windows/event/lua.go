@@ -23,17 +23,27 @@ func (wv *winEv) subscribe(L *lua.LState) int {
 	channel := L.CheckString(1)
 	query   := L.CheckString(2)
 
-	bookmark , err := node.Get(winEvBucket, channel + "_last")
-	if err != nil {
-		wv.watcher.SubscribeFromNow(channel , query)
-	} else {
-		audit.NewEvent("win-log" ,
-			audit.Subject("%s last bookmark" , channel),
-			audit.From(wv.vm.CodeVM()),
-			audit.Msg("%s" , bookmark)).Log().Put()
-		wv.watcher.SubscribeFromBookmark(channel ,query , string(bookmark))
+	var bookmark []byte
+	var err error
+	if wv.cfg.begin {
+		wv.watcher.SubscribeFromBeginning(channel , query)
+		goto loop
 	}
 
+	bookmark , err = node.Get(winEvBucket, channel + "_last")
+	if err != nil {
+		wv.watcher.SubscribeFromBeginning(channel, query)
+		goto loop
+	}
+
+	audit.NewEvent("win-log").
+		Subject("%s last bookmark" , channel).
+		From(wv.vm.CodeVM()).
+		Msg("%s" , bookmark).Log().Put()
+
+	wv.watcher.SubscribeFromBookmark(channel ,query , string(bookmark))
+
+loop:
 	for _ , item := range wv.channel {
 		if item != channel {
 			wv.channel = append(wv.channel , item)

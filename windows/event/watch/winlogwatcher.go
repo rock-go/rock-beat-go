@@ -29,7 +29,7 @@ func New() (*WinLogWatcher, error) {
 	return &WinLogWatcher{
 		shutdown:       make(chan interface{}),
 		errChan:        make(chan error),
-		eventChan:      make(chan *WinLogEvent),
+		eventChan:      make(chan *WinLogEvent , 5),
 		renderContext:  cHandle,
 		watches:        make(map[string]*channelWatcher),
 		RenderKeywords: true,
