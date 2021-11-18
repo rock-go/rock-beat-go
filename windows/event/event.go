@@ -107,14 +107,13 @@ func (wv *winEv) accpet() {
 		case <-wv.ctx.Done():
 			return
 		case evt := <- wv.watcher.Event():
+			delay = 0
 			wv.bookmark(evt)
 			wv.send(evt)
 
 			if inPass(wv.cfg.pass , evt.EventId) {
 				continue
 			}
-
-			//wv.logon(evt)
 			wv.call(evt)
 		case err := <-wv.watcher.Error():
 			audit.NewEvent("beat-windows-log",

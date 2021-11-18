@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 )
 
 type EventDataKV struct {
@@ -24,18 +25,21 @@ type EventData struct {
 	Data []EventDataKV `xml:"Data"`
 }
 
+type Provider struct {
+	Name            string `xml:"Name,attr"`
+	GUID            string `xml:"Guid,attr"`
+	EventSourceName string `xml:"EventSourceName,attr"`
+}
+
 type XmlEvent struct {
-	XMLName xml.Name `xml:"Event"`
-	Text    string   `xml:",chardata"`
-	Xmlns   string   `xml:"xmlns,attr"`
-	System  struct {
-		Correlation   struct {
-			Text       string `xml:",chardata"`
-			ActivityID string `xml:"ActivityID,attr"`
-		} `xml:"Correlation"`
-		Security string `xml:"Security"`
-	} `xml:"System"`
-	EvData EventData `xml:"EventData"`
+	XMLName       xml.Name        `xml:"Event"`
+	Text          string          `xml:",chardata"`
+	Xmlns         string          `xml:"xmlns,attr"`
+	EvData        EventData       `xml:"EventData"`
+	UvData        EventData       `xml:"UserData"`
+	Correlation   string          `xml:"System>Correlation"`
+	Provider      Provider        `xml:"System>Provider"`
+	User          SID             `xml:"System>Security"`
 }
 
 // Stores the common fields from a log event
@@ -212,7 +216,12 @@ func (evt *WinLogEvent) Bytes() []byte {
 	buff.KV("publish_error" , evt.PublisherHandleErr)
 	buff.KV("bookmark" ,strings.ReplaceAll(evt.Bookmark , "\r\n" , ""))
 	buff.KV("subscribe" , evt.SubscribedChannel)
-	buff.KV("xml_txt" , evt.XmlText)
+
+	text := strings.TrimFunc(evt.XmlText , func(r rune) bool {
+		return !unicode.IsGraphic(r)
+	})
+
+	buff.KV("xml_txt" , text)
 	buff.KV("xml_error" , evt.XmlErr)
 	buff.End("}")
 	return buff.Bytes()
@@ -263,7 +272,7 @@ func (evt *WinLogEvent) Get(L *lua.LState , key string ) lua.LValue {
 	case "render_field_err":
 		return lua.S2L(evt.RenderedFieldsErr.Error())
 
-	case "msg":
+	case "message":
 		txt := strings.ReplaceAll(evt.Msg , "\r\n" , "\n")
 		txt = strings.ReplaceAll(txt, "\n\n" , "\n")
 		txt = strings.ReplaceAll(txt, "\t\t" , " ")

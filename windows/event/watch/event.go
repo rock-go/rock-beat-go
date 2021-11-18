@@ -3,8 +3,8 @@
 package watch
 
 import (
-	"bytes"
 	"fmt"
+	"golang.org/x/sys/windows"
 	"syscall"
 	"unsafe"
 )
@@ -113,18 +113,21 @@ func RenderEventXML(eventHandle EventHandle) (string, error) {
 		return "", err
 	}
 
-	buffer := make([]byte, bufferUsed)
+	buffer := make([]uint16, bufferUsed)
 	bufSize := bufferUsed
 
-	err = EvtRender(0, syscall.Handle(eventHandle), EvtRenderEventXml, bufSize, (*uint16)(unsafe.Pointer(&buffer[0])), &bufferUsed, &propertyCount)
+	err = EvtRender(0, syscall.Handle(eventHandle), EvtRenderEventXml, bufSize, &buffer[0], &bufferUsed, &propertyCount)
 	if err != nil {
 		return err.Error(), err
 	}
 
 	// Remove null bytes
-	xml := bytes.Replace(buffer, []byte("\x00"), []byte{}, -1)
+	//xml := bytes.Replace(buffer, []byte("\x00"), []byte{}, -1)
 
-	return string(xml), nil
+	//xml16 := (*uint16)(unsafe.Pointer(&buffer[0]))
+	xml := windows.UTF16ToString(buffer)
+
+	return xml , nil
 }
 
 /* Get a handle that represents the publisher of the event, given the rendered event values. */
