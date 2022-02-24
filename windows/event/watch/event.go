@@ -1,3 +1,4 @@
+//go:build windows
 // +build windows
 
 package watch
@@ -127,7 +128,7 @@ func RenderEventXML(eventHandle EventHandle) (string, error) {
 	//xml16 := (*uint16)(unsafe.Pointer(&buffer[0]))
 	xml := windows.UTF16ToString(buffer)
 
-	return xml , nil
+	return xml, nil
 }
 
 /* Get a handle that represents the publisher of the event, given the rendered event values. */

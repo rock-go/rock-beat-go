@@ -1,3 +1,4 @@
+//go:build windows
 // +build windows
 
 //Winlog hooks into the Windows Event Log and streams events through channels
@@ -5,6 +6,8 @@ package watch
 
 import (
 	"fmt"
+	"github.com/rock-go/rock/audit"
+	"sync"
 	"time"
 )
 
@@ -29,9 +32,9 @@ func New() (*WinLogWatcher, error) {
 	return &WinLogWatcher{
 		shutdown:       make(chan interface{}),
 		errChan:        make(chan error),
-		eventChan:      make(chan *WinLogEvent , 5),
+		eventChan:      make(chan *WinLogEvent, 5),
 		renderContext:  cHandle,
-		watches:        make(map[string]*channelWatcher),
+		watches:        &sync.Map{},
 		RenderKeywords: true,
 		RenderMessage:  true,
 		RenderLevel:    true,
@@ -58,9 +61,7 @@ func (self *WinLogWatcher) SubscribeFromNow(channel, query string) error {
 }
 
 func (self *WinLogWatcher) subscribeWithoutBookmark(channel, query string, flags EVT_SUBSCRIBE_FLAGS) error {
-	self.watchMutex.Lock()
-	defer self.watchMutex.Unlock()
-	if _, ok := self.watches[channel]; ok {
+	if _, ok := self.load(channel); ok {
 		return fmt.Errorf("A watcher for channel %q already exists", channel)
 	}
 
@@ -74,11 +75,11 @@ func (self *WinLogWatcher) subscribeWithoutBookmark(channel, query string, flags
 		CloseEventHandle(uint64(newBookmark))
 		return err
 	}
-	self.watches[channel] = &channelWatcher{
+	self.store(channel, &channelWatcher{
 		bookmark:     newBookmark,
 		subscription: subscription,
 		callback:     callback,
-	}
+	})
 	return nil
 }
 
@@ -87,9 +88,7 @@ func (self *WinLogWatcher) subscribeWithoutBookmark(channel, query string, flags
 // is an XPath expression for filtering events: to recieve all events on the channel,
 // use "*" as the query
 func (self *WinLogWatcher) SubscribeFromBookmark(channel, query string, xmlString string) error {
-	self.watchMutex.Lock()
-	defer self.watchMutex.Unlock()
-	if _, ok := self.watches[channel]; ok {
+	if _, ok := self.load(channel); ok {
 		return fmt.Errorf("A watcher for channel %q already exists", channel)
 	}
 	callback := &LogEventCallbackWrapper{callback: self, subscribedChannel: channel}
@@ -102,42 +101,62 @@ func (self *WinLogWatcher) SubscribeFromBookmark(channel, query string, xmlStrin
 		CloseEventHandle(uint64(bookmark))
 		return fmt.Errorf("Failed to add listener: %v", err)
 	}
-	self.watches[channel] = &channelWatcher{
+
+	self.store(channel, &channelWatcher{
 		bookmark:     bookmark,
 		subscription: subscription,
 		callback:     callback,
-	}
+	})
 	return nil
 }
 
-/* Remove subscription from channel */
-func (self *WinLogWatcher) RemoveSubscription(channel string) error {
-	self.watchMutex.Lock()
-	defer self.watchMutex.Unlock()
+func (self *WinLogWatcher) remove(channel string) error {
+	watch, ok := self.load(channel)
+	if !ok {
+		return nil
+	}
+	defer self.watches.Delete(channel)
 
 	var cancelErr, closeErr error
-	if watch, ok := self.watches[channel]; ok {
-		cancelErr = CancelEventHandle(uint64(watch.subscription))
-		closeErr = CloseEventHandle(uint64(watch.subscription))
-		CloseEventHandle(uint64(watch.bookmark))
-	}
+	cancelErr = CancelEventHandle(uint64(watch.subscription))
+	closeErr = CloseEventHandle(uint64(watch.subscription))
+	CloseEventHandle(uint64(watch.bookmark))
 
-	delete(self.watches, channel)
 	if cancelErr != nil {
 		return cancelErr
 	}
 	return closeErr
 }
 
+func (self *WinLogWatcher) Watches() []string {
+	var channel []string
+
+	self.watches.Range(func(key, value interface{}) bool {
+		name := key.(string)
+		channel = append(channel, name)
+		return true
+	})
+	return channel
+}
+
+/* Remove subscription from channel */
+func (self *WinLogWatcher) RemoveSubscription(channel string) error {
+	return self.remove(channel)
+}
+
 // Remove all subscriptions from this watcher and shut down.
 func (self *WinLogWatcher) Shutdown() {
-	close(self.shutdown)
-	for channel := range self.watches {
+	defer func() {
+		close(self.shutdown)
+		close(self.errChan)
+		close(self.eventChan)
+	}()
+
+	for _, channel := range self.Watches() {
 		self.RemoveSubscription(channel)
 	}
+
 	CloseEventHandle(uint64(self.renderContext))
-	close(self.errChan)
-	close(self.eventChan)
 }
 
 /* Publish the received error to the errChan, but discard if shutdown is in progress */
@@ -222,17 +241,17 @@ func (self *WinLogWatcher) convertEvent(handle EventHandle, subscribedChannel st
 	CloseEventHandle(uint64(publisherHandle))
 
 	event := WinLogEvent{
-		XmlText:      xml,
-		XmlErr:       xmlErr,
-		ProviderName: providerName,
-		EventId:      eventId,
-		Qualifiers:   qualifiers,
-		Level:        level,
-		Task:         task,
-		Opcode:       opcode,
-		Created:      created,
-		RecordId:     recordId,
-		ProcessId:    processId,
+		XmlText:           xml,
+		XmlErr:            xmlErr,
+		ProviderName:      providerName,
+		EventId:           eventId,
+		Qualifiers:        qualifiers,
+		Level:             level,
+		Task:              task,
+		Opcode:            opcode,
+		Created:           created,
+		RecordId:          recordId,
+		ProcessId:         processId,
 		ThreadId:          threadId,
 		Channel:           channel,
 		ComputerName:      computerName,
@@ -254,8 +273,22 @@ func (self *WinLogWatcher) convertEvent(handle EventHandle, subscribedChannel st
 	return &event, nil
 }
 
+func (self *WinLogWatcher) store(channel string, watch *channelWatcher) {
+	self.watches.Store(channel, watch)
+}
+
+func (self *WinLogWatcher) load(channel string) (*channelWatcher, bool) {
+
+	watch, ok := self.watches.Load(channel)
+	if ok {
+		return watch.(*channelWatcher), true
+	}
+	return nil, false
+}
+
 /* Publish a new event */
 func (self *WinLogWatcher) PublishEvent(handle EventHandle, subscribedChannel string) {
+	defer audit.Recover(audit.Msg("windows beat watcher fail"))
 
 	// Convert the event from the event log schema
 	event, err := self.convertEvent(handle, subscribedChannel)
@@ -264,10 +297,8 @@ func (self *WinLogWatcher) PublishEvent(handle EventHandle, subscribedChannel st
 		return
 	}
 
+	watch, ok := self.load(subscribedChannel)
 	// Get the bookmark for the channel
-	self.watchMutex.Lock()
-	watch, ok := self.watches[subscribedChannel]
-	self.watchMutex.Unlock()
 	if !ok {
 		self.errChan <- fmt.Errorf("No handle for channel bookmark %q", subscribedChannel)
 		return
@@ -286,9 +317,9 @@ func (self *WinLogWatcher) PublishEvent(handle EventHandle, subscribedChannel st
 
 	// Don't block when shutting down if the consumer has gone away
 	select {
-	case self.eventChan <- event:
 	case <-self.shutdown:
 		return
+	case self.eventChan <- event:
 	}
 
 }

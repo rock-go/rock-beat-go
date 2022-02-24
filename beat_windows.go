@@ -1,15 +1,18 @@
 package beat
 
 import (
-	"github.com/rock-go/rock-beat-go/windows/account"
 	"github.com/rock-go/rock-beat-go/windows/event"
+	"github.com/rock-go/rock-beat-go/windows/registry"
+	"github.com/rock-go/rock-beat-go/windows/wmi"
 	"github.com/rock-go/rock/lua"
-	"github.com/rock-go/rock/xcall"
+	"github.com/rock-go/rock/xbase"
 )
 
-func LuaInjectApi(env xcall.Env) {
-	ukv := lua.NewUserKV()
-	event.Inject(ukv)
-	account.Inject(ukv)
-	env.Set("beat" , ukv)
+func LuaInjectApi(env *xbase.EnvT) {
+	win := lua.NewUserKV()
+	event.Inject(env, win)
+	wmi.Inject(env, win)
+	registry.Inject(env, win)
+
+	env.Global("win", win)
 }

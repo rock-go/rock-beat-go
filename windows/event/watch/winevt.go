@@ -1,3 +1,4 @@
+//go:build windows
 // +build windows
 
 package watch
@@ -48,7 +49,7 @@ const (
 	EvtSubscribeStartAfterBookmark
 )
 
-/* Fields that can be rendered with GetRendered*Value */
+/* Fields that can be rendered with GetRendered*Data */
 type EVT_SYSTEM_PROPERTY_ID int
 
 const (
